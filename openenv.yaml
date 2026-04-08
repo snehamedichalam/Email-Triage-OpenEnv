@@ -1,0 +1,62 @@
+name: email-triage-env
+version: "1.0.0"
+description: "An OpenEnv environment where AI agents learn to triage emails through labeling, prioritization and routing"
+author: "sneha"
+tags:
+  - openenv
+  - email
+  - triage
+  - nlp
+  - real-world
+
+tasks:
+  - name: easy
+    description: "Label emails as spam or not_spam"
+    difficulty: easy
+    max_steps: 5
+    reward_range: [0.0, 1.0]
+
+  - name: medium
+    description: "Prioritize emails on a scale of 1 to 5"
+    difficulty: medium
+    max_steps: 5
+    reward_range: [0.0, 1.0]
+
+  - name: hard
+    description: "Route emails to correct department and suggest replies"
+    difficulty: hard
+    max_steps: 3
+    reward_range: [0.0, 1.0]
+
+reward_shaping:
+  partial_credit: true
+  consecutive_penalty: true
+  completion_bonus: true
+
+observation_space:
+  type: object
+  fields:
+    - email_subject: string
+    - email_body: string
+    - sender: string
+    - timestamp: string
+    - instructions: string
+    - task_name: string
+    - step_number: integer
+    - max_steps: integer
+
+action_space:
+  type: object
+  fields:
+    - action_type: string
+    - label: string (optional)
+    - priority: integer (optional)
+    - department: string (optional)
+    - reply_suggestion: string (optional)
+
+endpoints:
+  reset: POST /reset
+  step: POST /step
+  state: GET /state
+  health: GET /health
+  tasks: GET /tasks
