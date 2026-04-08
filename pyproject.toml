@@ -1,9 +1,13 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.backends.legacy:build"
-
 [project]
 name = "email-triage-env"
 version = "0.1.0"
-requires-python = ">=3.8"
-dependencies = []
+description = "Email triage system"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "openai",
+    "python-dotenv",
+    "pandas"
+]
