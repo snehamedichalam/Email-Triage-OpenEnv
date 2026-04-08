@@ -1,8 +1,7 @@
 from fastapi import FastAPI, HTTPException
-from models import Action, Observation, StepResult
-from environment import EmailTriageEnvironment
-
-app = FastAPI(title="Email Triage OpenEnv", version="1.0.0")
+# Add the dots here to signify "same folder"
+from server.models import Action, Observation, StepResult 
+from server.environment import EmailTriageEnvironment
 
 env = EmailTriageEnvironment()
 
