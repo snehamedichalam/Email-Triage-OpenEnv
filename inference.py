@@ -29,6 +29,20 @@ def call_llm(prompt: str) -> str:
         return "{}"
 
 
+def get_default_action(task_name: str) -> dict:
+    """Return safe default action for each task"""
+    if task_name == "easy":
+        return {"action_type": "label", "label": "not_spam"}
+    elif task_name == "medium":
+        return {"action_type": "prioritize", "priority": 3}
+    else:
+        return {
+            "action_type": "route",
+            "department": "support",
+            "reply_suggestion": "Thank you for contacting us. We will look into this and get back to you shortly."
+        }
+
+
 def run_task(task_name: str) -> float:
     """Run one full task episode"""
     print(json.dumps({
@@ -38,11 +52,17 @@ def run_task(task_name: str) -> float:
     }))
 
     # Reset environment
-    res = requests.post(
-        f"{ENV_URL}/reset",
-        params={"task_name": task_name}
-    )
-    obs = res.json()
+    try:
+        res = requests.post(
+            f"{ENV_URL}/reset",
+            params={"task_name": task_name},
+            timeout=30
+        )
+        res.raise_for_status()
+        obs = res.json()
+    except Exception as e:
+        print(json.dumps({"event": "ERROR", "message": f"Reset failed: {str(e)}"}))
+        return 0.0
 
     step_num = 0
     total_reward = 0.0
@@ -50,27 +70,29 @@ def run_task(task_name: str) -> float:
 
     while not done:
         step_num += 1
-        email = obs["email"]
-        instructions = obs["instructions"]
 
-        # Build prompt based on task
-        if task_name == "easy":
-            format_hint = '{"action_type": "label", "label": "spam"} or {"action_type": "label", "label": "not_spam"}'
-        elif task_name == "medium":
-            format_hint = '{"action_type": "prioritize", "priority": 3}'
-        else:
-            format_hint = '{"action_type": "route", "department": "support", "reply_suggestion": "Thank you for contacting us..."}'
+        try:
+            email = obs.get("email", {})
+            instructions = obs.get("instructions", "")
 
-        prompt = f"""
+            # Build prompt based on task
+            if task_name == "easy":
+                format_hint = '{"action_type": "label", "label": "spam"} or {"action_type": "label", "label": "not_spam"}'
+            elif task_name == "medium":
+                format_hint = '{"action_type": "prioritize", "priority": 3}'
+            else:
+                format_hint = '{"action_type": "route", "department": "support", "reply_suggestion": "Thank you for contacting us..."}'
+
+            prompt = f"""
 You are an email triage assistant.
 
 Instructions: {instructions}
 Task: {task_name}
 
 Email Details:
-- Subject: {email['subject']}
-- From: {email['sender']}
-- Body: {email['body']}
+- Subject: {email.get('subject', '')}
+- From: {email.get('sender', '')}
+- Body: {email.get('body', '')}
 
 Respond ONLY with valid JSON in this format:
 {format_hint}
@@ -78,51 +100,66 @@ Respond ONLY with valid JSON in this format:
 No explanation. Just JSON.
 """
 
-        # Get LLM response
-        llm_response = call_llm(prompt)
+            # Get LLM response
+            llm_response = call_llm(prompt)
 
-        # Parse response
-        try:
-            clean = llm_response.strip()
-            if "```" in clean:
-                clean = clean.split("```")[1]
-                if clean.startswith("json"):
-                    clean = clean[4:]
-            action_data = json.loads(clean.strip())
-        except Exception:
-            if task_name == "easy":
-                action_data = {"action_type": "label", "label": "not_spam"}
-            elif task_name == "medium":
-                action_data = {"action_type": "prioritize", "priority": 3}
+            # Parse response
+            try:
+                clean = llm_response.strip()
+                if "```" in clean:
+                    clean = clean.split("```")[1]
+                    if clean.startswith("json"):
+                        clean = clean[4:]
+                action_data = json.loads(clean.strip())
+            except Exception:
+                action_data = get_default_action(task_name)
+
+            # Send action to environment
+            try:
+                step_res = requests.post(
+                    f"{ENV_URL}/step",
+                    json=action_data,
+                    timeout=30
+                )
+                step_res.raise_for_status()
+                result = step_res.json()
+            except Exception as e:
+                print(json.dumps({"event": "ERROR", "message": f"Step request failed: {str(e)}"}))
+                break
+
+            # Safely extract reward
+            if "reward" not in result:
+                print(json.dumps({
+                    "event": "ERROR",
+                    "message": f"No reward in response: {result}"
+                }))
+                # Use default reward of 0 and check if done
+                reward = 0.0
+                done = result.get("done", True)
             else:
-                action_data = {
-                    "action_type": "route",
-                    "department": "support",
-                    "reply_suggestion": "Thank you for contacting us."
-                }
+                reward = result["reward"].get("score", 0.0)
+                done = result.get("done", True)
 
-        # Send action to environment
-        step_res = requests.post(
-            f"{ENV_URL}/step",
-            json=action_data
-        )
-        result = step_res.json()
+            total_reward += reward
 
-        reward = result["reward"]["score"]
-        total_reward += reward
-        done = result["done"]
+            print(json.dumps({
+                "event": "STEP",
+                "task": task_name,
+                "step": step_num,
+                "action": action_data,
+                "reward": reward,
+                "done": done
+            }))
 
-        print(json.dumps({
-            "event": "STEP",
-            "task": task_name,
-            "step": step_num,
-            "action": action_data,
-            "reward": reward,
-            "done": done
-        }))
+            if not done and result.get("observation"):
+                obs = result["observation"]
 
-        if not done and result.get("observation"):
-            obs = result["observation"]
+        except Exception as e:
+            print(json.dumps({
+                "event": "ERROR",
+                "message": f"Step {step_num} failed: {str(e)}"
+            }))
+            break
 
     print(json.dumps({
         "event": "END",
@@ -139,8 +176,12 @@ if __name__ == "__main__":
     all_scores = {}
 
     for task in tasks:
-        score = run_task(task)
-        all_scores[task] = round(score, 2)
+        try:
+            score = run_task(task)
+            all_scores[task] = round(score, 2)
+        except Exception as e:
+            print(json.dumps({"event": "ERROR", "task": task, "message": str(e)}))
+            all_scores[task] = 0.0
 
     print(json.dumps({
         "event": "SUMMARY",
