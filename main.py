@@ -263,3 +263,8 @@ def get_state():
         "total_reward": round(state.get("total_reward", 0.0), 2),
         "done": state.get("done"),
     }
+
+def main():
+    import uvicorn
+    uvicorn.run('main:app', host='0.0.0.0', port=7860)
+
