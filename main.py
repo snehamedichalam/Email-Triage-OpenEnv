@@ -124,21 +124,21 @@ def make_email(raw: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def compute_easy_reward(action: dict, ground_truth: dict) -> float:
-    return 1.0 if action.get("label") == ground_truth["label"] else 0.0
+    return 0.9 if action.get("label") == ground_truth["label"] else 0.1
 
 
 def compute_medium_reward(action: dict, ground_truth: dict) -> float:
     try:
         diff = abs(int(action.get("priority", 0)) - ground_truth["priority"])
     except (TypeError, ValueError):
-        return 0.0
+        return 0.1
     if diff == 0:
-        return 1.0
+        return 0.9
     elif diff == 1:
         return 0.7
     elif diff == 2:
         return 0.4
-    return 0.0
+    return 0.1
 
 
 def compute_hard_reward(action: dict, ground_truth: dict) -> float:
