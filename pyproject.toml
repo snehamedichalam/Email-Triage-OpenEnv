@@ -6,19 +6,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "openenv-core>=0.2.0",
-    "fastapi",
-    "uvicorn",
-    "python-dotenv"
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "openai>=1.0.0",
+    "requests>=2.31.0",
 ]
-
-[project.scripts]
-server = "server.app:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# FIX: Tell the build system where your code is
 [tool.hatch.build.targets.wheel]
-packages = ["server"]
+packages = ["."]
